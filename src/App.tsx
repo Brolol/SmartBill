@@ -6,6 +6,7 @@ import { LayoutDashboard, Receipt, BarChart3, Package } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import CreateBill from './pages/CreateBill';
 import Inventory from './pages/Inventory';
+import Analytics from './pages/Analytics'; // Added: Import the Analytics component
 import BottomNav from './components/BottomNav';
 
 // We extract the inner layout into its own component so we can use the `useLocation` hook
@@ -13,7 +14,6 @@ function MainLayout() {
   const location = useLocation();
   
   // Define our navigation structure
-  // Path updated to /create-bill to match the BottomNav and existing routing logic
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { path: '/create-bill', label: 'Create Bill', icon: <Receipt className="w-5 h-5" /> },
@@ -78,14 +78,14 @@ function MainLayout() {
       {/* 2. Main Content Area */}
       <main className="flex-1 flex flex-col p-4 overflow-hidden relative">
         
-        {/* Top Header - Hidden on small mobile screens to save space if desired, or kept for consistency */}
+        {/* Top Header */}
         <header className="glass-sm h-16 mb-4 md:mb-6 flex items-center justify-between px-6 z-10 shrink-0">
           <div className="text-xs md:text-sm text-gray-400">
             Pages / <span className="text-white font-medium">{currentTitle}</span>
           </div>
         </header>
 
-        {/* Page Content Container - Added padding-bottom for mobile to prevent BottomNav overlap */}
+        {/* Page Content Container */}
         <div className="flex-1 overflow-y-auto lg:overflow-hidden relative z-0 pb-20 lg:pb-0">
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
@@ -93,18 +93,13 @@ function MainLayout() {
               <Route path="/create-bill" element={<CreateBill />} />
               <Route path="/inventory" element={<Inventory />} />
               
-              {/* Analytics Placeholder */}
-              <Route path="/analytics" element={
-                <motion.div initial={{opacity: 0}} animate={{opacity: 1}} className="glass p-8 h-full flex items-center justify-center text-gray-500 flex-col gap-4">
-                  <BarChart3 className="w-12 h-12 text-primary/50" />
-                  <h2 className="text-center">Advanced Analytics Engine Coming Soon...</h2>
-                </motion.div>
-              } />
+              {/* Analytics Route: Now using the actual component */}
+              <Route path="/analytics" element={<Analytics />} />
             </Routes>
           </AnimatePresence>
         </div>
 
-        {/* 3. Mobile Bottom Navigation (Only visible on Mobile/Tablet via lg:hidden) */}
+        {/* 3. Mobile Bottom Navigation */}
         <BottomNav />
 
       </main>
