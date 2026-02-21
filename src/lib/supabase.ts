@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database.types.ts';
 
-// 1. Initialize the Supabase client using Vite environment variables
+// 1. Initialize environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -9,11 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-// Export the single client instance to be used across the application
+// 2. Export the single client instance
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 // ==========================================
-// CORE DATA FETCHING QUERIES
+// INTERFACES
 // ==========================================
 
 export interface DailyStat {
@@ -22,11 +22,16 @@ export interface DailyStat {
   revenue: number;
 }
 
+interface ProductStock {
+  current_stock: number;
+}
+
+// ==========================================
+// CORE DATA FETCHING QUERIES
+// ==========================================
+
 /**
- * Fetches historical daily statistics for a specific product to feed into the Prediction Engine.
- * @param productId - The UUID of the product
- * @param days - Number of days of historical data to retrieve (default: 30)
- * @returns Array of daily statistics
+ * Fetches historical daily statistics for a specific product for the AI Prediction Engine.
  */
 export async function fetchProductStatsForPrediction(
   productId: string, 
@@ -48,7 +53,7 @@ export async function fetchProductStatsForPrediction(
     throw new Error(`Failed to fetch product stats: ${error.message}`);
   }
 
-  return data || [];
+  return (data as unknown as DailyStat[]) || [];
 }
 
 /**
@@ -68,4 +73,45 @@ export async function fetchUnreadInsights() {
   }
 
   return data || [];
+}
+
+// ==========================================
+// HELPER FUNCTIONS
+// ==========================================
+
+/**
+ * Deducts stock from a product after a successful sale.
+ * THE FIX: We cast the client to 'any' to remove the 'never' constraint 
+ * inherited from the generated types.
+ */
+export async function decrementStock(productId: string, quantity: number) {
+  // Use 'as any' on the supabase client to bypass strict type locks
+  const client = supabase as any;
+
+  // 1. Fetch current stock
+  const { data, error: fetchError } = await client
+    .from('products')
+    .select('current_stock')
+    .eq('id', productId)
+    .single();
+
+  const productData = data as unknown as ProductStock;
+
+  if (fetchError || !productData) {
+    console.error('Stock Fetch Error:', fetchError?.message);
+    return;
+  }
+
+  // 2. Calculate new stock level
+  const newStock = Math.max(0, productData.current_stock - quantity);
+
+  // 3. Update the database
+  const { error: updateError } = await client
+    .from('products')
+    .update({ current_stock: newStock })
+    .eq('id', productId);
+
+  if (updateError) {
+    console.error('Stock Update Error:', updateError.message);
+  }
 }

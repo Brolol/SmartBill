@@ -5,16 +5,18 @@ import { LayoutDashboard, Receipt, BarChart3, Package } from 'lucide-react';
 // Import our newly created pages
 import Dashboard from './pages/Dashboard';
 import CreateBill from './pages/CreateBill';
+import Inventory from './pages/Inventory';
+import BottomNav from './components/BottomNav';
 
 // We extract the inner layout into its own component so we can use the `useLocation` hook
-// which requires being wrapped inside the <BrowserRouter>
 function MainLayout() {
   const location = useLocation();
   
   // Define our navigation structure
+  // Path updated to /create-bill to match the BottomNav and existing routing logic
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { path: '/bill', label: 'Create Bill', icon: <Receipt className="w-5 h-5" /> },
+    { path: '/create-bill', label: 'Create Bill', icon: <Receipt className="w-5 h-5" /> },
     { path: '/analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
     { path: '/inventory', label: 'Inventory', icon: <Package className="w-5 h-5" /> },
   ];
@@ -23,14 +25,14 @@ function MainLayout() {
   const currentTitle = navItems.find(item => item.path === location.pathname)?.label || 'Overview';
 
   return (
-    <div className="h-screen flex bg-background text-white selection:bg-primary/30 overflow-hidden">
+    <div className="h-screen flex bg-background text-white selection:bg-primary/30 overflow-hidden relative">
       
-      {/* Animated Sidebar */}
+      {/* 1. Animated Sidebar (Hidden on Mobile) */}
       <motion.aside 
         initial={{ x: -20, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-64 glass m-4 hidden md:flex flex-col border-r border-white/5 z-20"
+        className="w-64 glass m-4 hidden lg:flex flex-col border-r border-white/5 z-20 shrink-0"
       >
         <div className="p-6">
           <h1 className="text-2xl font-bold tracking-tighter text-gradient">
@@ -73,42 +75,45 @@ function MainLayout() {
         </div>
       </motion.aside>
 
-      {/* Main Content Area */}
+      {/* 2. Main Content Area */}
       <main className="flex-1 flex flex-col p-4 overflow-hidden relative">
         
-        {/* Top Header */}
-        <header className="glass-sm h-16 mb-6 flex items-center justify-between px-6 z-10 shrink-0">
-          <div className="text-sm text-gray-400">
+        {/* Top Header - Hidden on small mobile screens to save space if desired, or kept for consistency */}
+        <header className="glass-sm h-16 mb-4 md:mb-6 flex items-center justify-between px-6 z-10 shrink-0">
+          <div className="text-xs md:text-sm text-gray-400">
             Pages / <span className="text-white font-medium">{currentTitle}</span>
           </div>
         </header>
 
-        {/* Page Content Container */}
-        <div className="flex-1 overflow-hidden relative z-0">
-          {/* AnimatePresence handles smooth fading between pages if we add exit animations later */}
+        {/* Page Content Container - Added padding-bottom for mobile to prevent BottomNav overlap */}
+        <div className="flex-1 overflow-y-auto lg:overflow-hidden relative z-0 pb-20 lg:pb-0">
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/bill" element={<CreateBill />} />
+              <Route path="/create-bill" element={<CreateBill />} />
+              <Route path="/inventory" element={<Inventory />} />
               
-              {/* Placeholders for future pages to prevent 404s */}
+              {/* Analytics Placeholder */}
               <Route path="/analytics" element={
                 <motion.div initial={{opacity: 0}} animate={{opacity: 1}} className="glass p-8 h-full flex items-center justify-center text-gray-500 flex-col gap-4">
                   <BarChart3 className="w-12 h-12 text-primary/50" />
-                  <h2>Advanced Analytics Engine Coming Soon...</h2>
-                </motion.div>
-              } />
-              <Route path="/inventory" element={
-                <motion.div initial={{opacity: 0}} animate={{opacity: 1}} className="glass p-8 h-full flex items-center justify-center text-gray-500 flex-col gap-4">
-                  <Package className="w-12 h-12 text-accent-cyan/50" />
-                  <h2>Smart Stock Optimization Coming Soon...</h2>
+                  <h2 className="text-center">Advanced Analytics Engine Coming Soon...</h2>
                 </motion.div>
               } />
             </Routes>
           </AnimatePresence>
         </div>
 
+        {/* 3. Mobile Bottom Navigation (Only visible on Mobile/Tablet via lg:hidden) */}
+        <BottomNav />
+
       </main>
+
+      {/* Decorative Background Blobs */}
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent-cyan/10 rounded-full blur-[120px]" />
+      </div>
     </div>
   );
 }
