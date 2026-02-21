@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-gray-100 antialiased overflow-x-hidden;
+    /* Adding a subtle radial gradient to the main background for depth */
+    background-image: radial-gradient(circle at 50% 0%, rgba(30, 41, 59, 0.5) 0%, transparent 70%);
+  }
+}
+
+@layer components {
+  /* The core glassmorphism utility */
+  .glass {
+    @apply bg-surface/40 backdrop-blur-xl border border-white/10 shadow-glass rounded-2xl;
+  }
+  
+  /* A tighter glass effect for smaller elements like badges or inputs */
+  .glass-sm {
+    @apply bg-surface/60 backdrop-blur-md border border-white/5 rounded-lg;
+  }
+
+  /* Text gradient utility for high-impact headers */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-glow to-accent-neon;
+  }
+}
+
+/* Custom Scrollbar for a polished feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-background;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
