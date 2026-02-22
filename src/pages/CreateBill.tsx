@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Minus, Trash2, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins, IndianRupee } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins, IndianRupee, Printer } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { useCartStore } from '../store/useCartStore';
@@ -23,6 +23,7 @@ export default function CreateBill() {
   const [exitPassQrUrl, setExitPassQrUrl] = useState('');
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
+  const [currentBillId, setCurrentBillId] = useState<string>('');
 
   const { items, addItem, removeItem, updateQuantity, getTotal, clearCart } = useCartStore();
 
@@ -63,11 +64,79 @@ export default function CreateBill() {
 
   const total = getTotal();
 
+  /**
+   * Generates a thermal-style printable receipt window
+   */
+  const handlePrintReceipt = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const receiptHtml = `
+      <html>
+        <head>
+          <title>Receipt_${currentBillId}</title>
+          <style>
+            @media print { @page { margin: 0; } }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 80mm; 
+              padding: 10px; 
+              margin: 0 auto;
+              color: #000;
+            }
+            .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+            .info { font-size: 12px; margin: 10px 0; border-bottom: 1px dashed #000; padding-bottom: 5px; }
+            .items { width: 100%; font-size: 12px; border-collapse: collapse; margin: 10px 0; }
+            .items td { padding: 3px 0; }
+            .total-section { border-top: 1px solid #000; padding-top: 5px; font-weight: bold; }
+            .points { font-size: 10px; margin-top: 5px; }
+            .footer { text-align: center; margin-top: 20px; font-size: 11px; }
+            .qr-container { margin: 15px 0; }
+          </style>
+        </head>
+        <body onload="window.print(); window.close();">
+          <div class="header">
+            <h2 style="margin: 0;">SMART-BILL AI</h2>
+            <p style="font-size: 11px; margin: 2px 0;">TRIVANDRUM, KERALA</p>
+          </div>
+          <div class="info">
+            <p style="margin: 2px 0;">DATE: ${new Date().toLocaleString()}</p>
+            <p style="margin: 2px 0;">INV: ${currentBillId.slice(0, 8).toUpperCase()}</p>
+          </div>
+          <table class="items">
+            ${items.map(item => `
+              <tr>
+                <td>${item.name} x${item.quantity}</td>
+                <td style="text-align: right;">₹${(item.price * item.quantity).toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </table>
+          <div class="total-section">
+            <div style="display: flex; justify-content: space-between;">
+              <span>GRAND TOTAL:</span>
+              <span>₹${total.toFixed(2)}</span>
+            </div>
+            <div class="points">LOYALTY POINTS EARNED: ${earnedPoints}</div>
+          </div>
+          <div class="footer">
+            <div class="qr-container">
+              <p style="margin-bottom: 5px; font-weight: bold;">SECURITY GATE PASS</p>
+              <img src="${exitPassQrUrl}" style="width: 120px; height: 120px;" />
+            </div>
+            <p>PLEASE SCAN AT EXIT GATE</p>
+            <p style="margin-top: 10px; font-style: italic;">Thank you for shopping!</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+  };
+
   const handleCheckout = async () => {
     setPaymentState('generating');
     try {
-      // 1. Create the main Bill record in Supabase
-      // Using 'as any' to bypass schema cache/type mismatches
       const { data: billData, error: billError } = await (supabase as any)
         .from('bills')
         .insert([{ total_amount: total }])
@@ -75,8 +144,8 @@ export default function CreateBill() {
         .single();
 
       if (billError) throw new Error(`Bill Error: ${billError.message}`);
+      setCurrentBillId(billData.id);
 
-      // 2. Prepare the items - Mapping strictly to database column names
       const transactionItems = items.map(item => ({
         bill_id: billData.id,
         product_id: item.id,
@@ -84,14 +153,12 @@ export default function CreateBill() {
         subtotal: item.price * item.quantity
       }));
       
-      // 3. Insert individual items linked to that Bill ID
       const { error: itemsError } = await (supabase as any)
         .from('bill_items')
         .insert(transactionItems);
 
       if (itemsError) throw new Error(`Items Error: ${itemsError.message}`);
 
-      // 4. Generate Payment QR
       const qrString = `PAYMENT://BILL/${billData.id}/TOTAL/INR${total.toFixed(2)}`;
       const url = await QRCode.toDataURL(qrString, {
         width: 300,
@@ -101,7 +168,6 @@ export default function CreateBill() {
       setPaymentState('qr');
     } catch (err: any) {
       console.error('Checkout failed:', err);
-      // Detailed alert to catch specific database column mismatches
       alert(`Checkout Failed: ${err.message || 'Check your Supabase SQL structure.'}`);
       setPaymentState('idle');
     }
@@ -109,13 +175,19 @@ export default function CreateBill() {
 
   const handlePaymentSuccess = async () => {
     try {
+      // 1. Accuracy Fix: Calculate points immediately (1:30 ratio)
+      const pointsCalculated = Math.floor(total * 30);
+      setEarnedPoints(pointsCalculated);
+
+      // 2. Sync database stock
       for (const item of items) {
         await decrementStock(item.id, item.quantity);
       }
 
-      const points = await addLoyaltyPoints('guest-user', total);
-      setEarnedPoints(points);
+      // 3. Update database loyalty points
+      await addLoyaltyPoints('guest-user', total);
 
+      // 4. Generate the Exit Pass for the QR and Receipt
       const passId = await generateExitPass(`BILL-${Date.now()}`);
       if (passId) {
         const passUrl = await QRCode.toDataURL(passId, {
@@ -127,11 +199,12 @@ export default function CreateBill() {
 
       setPaymentState('success');
       
+      // Keep state for 30s to allow printing/scanning
       setTimeout(() => {
         clearCart();
         setPaymentState('idle');
         setExitPassQrUrl('');
-      }, 15000); 
+      }, 30000); 
     } catch (err) {
       console.error('Finalizing transaction failed:', err);
     }
@@ -229,7 +302,7 @@ export default function CreateBill() {
           </button>
         </div>
 
-        {/* Success / Pass Overlay */}
+        {/* Success / Pass / Receipt Overlay */}
         <AnimatePresence>
           {(paymentState === 'qr' || paymentState === 'success') && (
             <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
@@ -243,20 +316,33 @@ export default function CreateBill() {
                   <button onClick={() => setPaymentState('idle')} className="mt-8 text-gray-500 underline">Cancel</button>
                 </>
               ) : (
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-4 w-full">
                   <CheckCircle2 className="w-16 h-16 text-success" />
                   <h3 className="text-2xl font-bold text-white">Payment Received</h3>
+                  
                   <div className="flex items-center gap-2 bg-yellow-500/10 px-4 py-2 rounded-full border border-yellow-500/20">
                     <Coins className="w-5 h-5 text-yellow-500" />
                     <span className="text-yellow-500 font-bold">+{earnedPoints} Points Earned</span>
                   </div>
-                  <div className="bg-white p-4 rounded-xl mt-4">
-                    <p className="text-black font-black text-xs uppercase mb-2">Security Gate Pass</p>
+
+                  {/* Security Exit Pass Display */}
+                  <div className="bg-white p-4 rounded-xl mt-2">
+                    <p className="text-black font-black text-xs uppercase mb-2">Gate Pass QR</p>
                     {exitPassQrUrl ? <img src={exitPassQrUrl} className="w-40 h-40" alt="Exit Pass" /> : <Loader2 className="animate-spin text-black" />}
                   </div>
-                  <div className="flex items-center gap-2 text-primary-glow mt-4 animate-pulse">
-                    <ShieldCheck className="w-5 h-5" />
-                    <span className="text-sm font-medium">Valid for Exit</span>
+                  
+                  <div className="grid grid-cols-1 gap-3 w-full max-w-xs mt-4">
+                    <button 
+                      onClick={handlePrintReceipt}
+                      className="w-full py-3 bg-white text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-100 transition-colors"
+                    >
+                      <Printer className="w-5 h-5" /> Print Receipt
+                    </button>
+                    
+                    <div className="flex items-center justify-center gap-2 text-primary-glow animate-pulse">
+                      <ShieldCheck className="w-5 h-5" />
+                      <span className="text-xs font-medium">Valid for Exit at Security Gate</span>
+                    </div>
                   </div>
                 </div>
               )}
