@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Minus, Trash2, QrCode, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins } from 'lucide-react';
+// REMOVED: QrCode import to resolve the TS warning
+import { Search, Plus, Minus, Trash2, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins, IndianRupee } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { useCartStore } from '../store/useCartStore';
@@ -12,12 +13,6 @@ interface Product {
   base_price: number;
   current_stock: number;
   barcode?: string;
-}
-
-interface BillItemInsert {
-  product_id: string;
-  quantity: number;
-  subtotal: number;
 }
 
 export default function CreateBill() {
@@ -72,46 +67,54 @@ export default function CreateBill() {
   const handleCheckout = async () => {
     setPaymentState('generating');
     try {
-      // 1. Generate Payment QR (Simulated Payment Request)
-      const invoiceId = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-      const qrString = `PAYMENT://INVOICE/${invoiceId}/AMOUNT/${total.toFixed(2)}`;
-      const url = await QRCode.toDataURL(qrString, {
-        width: 300,
-        color: { dark: '#6366F1', light: '#0B0F19' }
-      });
-      setQrCodeDataUrl(url);
+      // 1. Create the main Bill record in Supabase
+      const { data: billData, error: billError } = await (supabase as any)
+        .from('bills')
+        .insert([{ total_amount: total }])
+        .select()
+        .single();
 
-      // 2. Insert Bill Items to Database
-      const transactionItems: BillItemInsert[] = items.map(item => ({
+      if (billError) throw billError;
+
+      // 2. Insert individual items linked to that Bill ID
+      const transactionItems = items.map(item => ({
+        bill_id: billData.id,
         product_id: item.id,
         quantity: item.quantity,
         subtotal: item.price * item.quantity
       }));
       
-      const { error } = await supabase.from('bill_items').insert(transactionItems as any);
-      if (error) throw error;
+      const { error: itemsError } = await (supabase as any)
+        .from('bill_items')
+        .insert(transactionItems);
 
+      if (itemsError) throw itemsError;
+
+      // 3. Generate Payment QR
+      const qrString = `PAYMENT://BILL/${billData.id}/TOTAL/INR${total.toFixed(2)}`;
+      const url = await QRCode.toDataURL(qrString, {
+        width: 300,
+        color: { dark: '#6366F1', light: '#0B0F19' }
+      });
+      setQrCodeDataUrl(url);
       setPaymentState('qr');
     } catch (err) {
       console.error('Checkout failed:', err);
+      alert("Checkout Failed. Ensure your Supabase tables (bills, bill_items) are created.");
       setPaymentState('idle');
     }
   };
 
   const handlePaymentSuccess = async () => {
     try {
-      // 1. Deduct Stock for all items
       for (const item of items) {
         await decrementStock(item.id, item.quantity);
       }
 
-      // 2. Add Loyalty Points (1:30 Ratio)
-      // Using a static ID 'guest-user' for demo; replace with auth logic if needed
       const points = await addLoyaltyPoints('guest-user', total);
       setEarnedPoints(points);
 
-      // 3. Generate Exit Pass for the Security Gate
-      const passId = await generateExitPass(`INV-${Date.now()}`);
+      const passId = await generateExitPass(`BILL-${Date.now()}`);
       if (passId) {
         const passUrl = await QRCode.toDataURL(passId, {
           width: 300,
@@ -122,12 +125,11 @@ export default function CreateBill() {
 
       setPaymentState('success');
       
-      // Auto-clear and reset after delay
       setTimeout(() => {
         clearCart();
         setPaymentState('idle');
         setExitPassQrUrl('');
-      }, 10000); // 10 seconds to allow showing the exit pass
+      }, 15000); 
     } catch (err) {
       console.error('Finalizing transaction failed:', err);
     }
@@ -144,15 +146,12 @@ export default function CreateBill() {
           <Search className="text-gray-400 w-4 h-4 md:w-5 md:h-5" />
           <input
             type="text"
-            placeholder="Search name or barcode..."
+            placeholder="Search items..."
             className="bg-transparent border-none outline-none flex-1 text-white text-sm md:text-base"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <button 
-            onClick={() => setIsScanning(true)}
-            className="p-2 glass-sm text-accent-neon hover:bg-accent-cyan/10 shrink-0"
-          >
+          <button onClick={() => setIsScanning(true)} className="p-2 glass-sm text-accent-neon shrink-0">
             <Barcode className="w-5 h-5 md:w-6 md:h-6" />
           </button>
         </div>
@@ -162,15 +161,14 @@ export default function CreateBill() {
             {filteredProducts.map((p) => (
               <motion.div
                 key={p.id}
-                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => addItem({ id: p.id, name: p.name, price: Number(p.base_price) })}
                 className="glass-sm p-3 md:p-4 cursor-pointer hover:border-primary/50 group"
               >
                 <h3 className="font-medium text-gray-100 text-sm md:text-base truncate">{p.name}</h3>
                 <div className="flex justify-between items-center mt-2">
-                  <span className="text-primary-glow font-bold text-sm md:text-base">${Number(p.base_price).toFixed(2)}</span>
-                  <span className="text-[9px] md:text-[10px] text-accent-cyan font-mono bg-accent-cyan/5 px-1 rounded">{p.barcode || 'NO SKU'}</span>
+                  <span className="text-primary-glow font-bold text-sm md:text-base">₹{Number(p.base_price).toFixed(2)}</span>
+                  <span className="text-[10px] text-accent-cyan font-mono bg-accent-cyan/5 px-1 rounded">{p.barcode || 'SKU'}</span>
                 </div>
               </motion.div>
             ))}
@@ -181,11 +179,10 @@ export default function CreateBill() {
       {/* 2. SCANNER MODAL */}
       <AnimatePresence>
         {isScanning && (
-          <motion.div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 md:p-6 backdrop-blur-md">
+          <motion.div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 backdrop-blur-md">
             <div className="w-full max-w-md glass p-4 relative">
-              <button onClick={() => setIsScanning(false)} className="absolute -top-10 right-0 text-white p-2"><X className="w-8 h-8"/></button>
-              <div id="reader-bill" className="rounded-xl overflow-hidden shadow-2xl"></div>
-              <p className="text-center text-gray-400 mt-4 text-xs">Align barcode within the frame</p>
+              <button onClick={() => setIsScanning(false)} className="absolute -top-10 right-0 text-white"><X className="w-8 h-8"/></button>
+              <div id="reader-bill" className="rounded-xl overflow-hidden"></div>
             </div>
           </motion.div>
         )}
@@ -193,86 +190,71 @@ export default function CreateBill() {
 
       {/* 3. CART SECTION */}
       <div className="w-full lg:w-96 glass flex flex-col relative overflow-hidden order-1 lg:order-2 max-h-[40vh] lg:max-h-full">
-        <div className="p-3 md:p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
-          <h2 className="text-lg md:text-xl font-semibold text-gradient">Billing Cart</h2>
-          <span className="lg:hidden text-xs bg-primary/20 text-primary-glow px-2 py-1 rounded-full">{items.length} items</span>
+        <div className="p-4 border-b border-white/5 bg-white/5">
+          <h2 className="text-xl font-bold text-gradient">Checkout Cart</h2>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-3 md:p-4 flex flex-col gap-2 md:gap-3">
-          {items.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-xs md:text-sm">Empty cart</div>
-          ) : (
-            items.map((item) => (
-              <div key={item.id} className="glass-sm p-2 md:p-3">
-                <div className="flex justify-between text-xs md:text-sm mb-1">
-                  <span className="truncate pr-4">{item.name}</span>
-                  <button onClick={() => removeItem(item.id)} className="shrink-0"><Trash2 className="w-4 h-4 text-gray-500" /></button>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-primary-glow font-bold text-xs md:text-sm">${(item.price * item.quantity).toFixed(2)}</span>
-                  <div className="flex items-center gap-2 bg-white/5 rounded-lg p-1">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="p-1 hover:bg-white/10 rounded"><Minus className="w-3 h-3" /></button>
-                    <span className="text-xs min-w-[1rem] text-center">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1 hover:bg-white/10 rounded"><Plus className="w-3 h-3" /></button>
-                  </div>
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          {items.map((item) => (
+            <div key={item.id} className="glass-sm p-3">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="truncate pr-4">{item.name}</span>
+                <button onClick={() => removeItem(item.id)}><Trash2 className="w-4 h-4 text-gray-500" /></button>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-primary-glow font-bold">₹{(item.price * item.quantity).toFixed(2)}</span>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg p-1">
+                  <button onClick={() => updateQuantity(item.id, item.quantity - 1)}><Minus className="w-3 h-3" /></button>
+                  <span className="text-xs">{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, item.quantity + 1)}><Plus className="w-3 h-3" /></button>
                 </div>
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
 
-        <div className="p-4 md:p-6 border-t border-white/5 bg-background/50">
-          <div className="flex justify-between items-end mb-4 md:mb-6">
-            <span className="text-gray-400 text-sm">Total</span>
-            <span className="text-2xl md:text-4xl font-bold tracking-tight">${total.toFixed(2)}</span>
+        <div className="p-6 border-t border-white/5 bg-background/50">
+          <div className="flex justify-between items-end mb-6">
+            <span className="text-gray-400 text-sm">Amount Due</span>
+            <span className="text-4xl font-bold tracking-tight">₹{total.toFixed(2)}</span>
           </div>
           <button
             disabled={items.length === 0 || paymentState !== 'idle'}
             onClick={handleCheckout}
-            className="w-full py-3 md:py-4 rounded-xl bg-primary text-white font-bold shadow-neon-primary flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            className="w-full py-4 rounded-xl bg-primary text-white font-bold shadow-neon-primary flex items-center justify-center gap-2"
           >
-            {paymentState === 'generating' ? <Loader2 className="animate-spin" /> : <><QrCode className="w-5 h-5" /> Pay & Sync AI</>}
+            {paymentState === 'generating' ? <Loader2 className="animate-spin" /> : <><IndianRupee className="w-5 h-5" /> Pay & Generate Pass</>}
           </button>
         </div>
 
-        {/* Payment & Exit Pass Overlay */}
+        {/* Success / Pass Overlay */}
         <AnimatePresence>
           {(paymentState === 'qr' || paymentState === 'success') && (
-            <motion.div className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 lg:z-20 flex flex-col items-center justify-center p-6 text-center">
+            <motion.div className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
               {paymentState === 'qr' ? (
                 <>
-                  <div className="bg-white p-2 rounded-2xl shadow-2xl mb-6">
-                    <img src={qrCodeDataUrl} className="w-48 h-48 md:w-64 md:h-64 cursor-pointer" onClick={handlePaymentSuccess} alt="Payment QR" />
+                  <div className="bg-white p-2 rounded-2xl mb-6">
+                    <img src={qrCodeDataUrl} className="w-64 h-64 cursor-pointer" onClick={handlePaymentSuccess} />
                   </div>
-                  <h3 className="text-xl md:text-2xl font-bold text-white">Scan to Pay</h3>
-                  <p className="text-gray-400 mt-2 text-sm">Click QR to simulate success</p>
-                  <button onClick={() => setPaymentState('idle')} className="mt-8 text-gray-500 underline text-sm">Cancel</button>
+                  <h3 className="text-2xl font-bold text-white">Scan to Pay</h3>
+                  <p className="text-gray-400 mt-2">Click the QR to simulate payment success</p>
+                  <button onClick={() => setPaymentState('idle')} className="mt-8 text-gray-500 underline">Cancel</button>
                 </>
               ) : (
-                <div className="flex flex-col items-center gap-4 w-full">
-                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
-                    <CheckCircle2 className="w-16 h-16 text-success mb-2" />
-                  </motion.div>
-                  <h3 className="text-2xl font-bold text-white">Payment Success!</h3>
-                  
+                <div className="flex flex-col items-center gap-4">
+                  <CheckCircle2 className="w-16 h-16 text-success" />
+                  <h3 className="text-2xl font-bold text-white">Payment Received</h3>
                   <div className="flex items-center gap-2 bg-yellow-500/10 px-4 py-2 rounded-full border border-yellow-500/20">
                     <Coins className="w-5 h-5 text-yellow-500" />
-                    <span className="text-yellow-500 font-bold">+{earnedPoints} Points Earned</span>
+                    <span className="text-yellow-500 font-bold">+{earnedPoints} Points</span>
                   </div>
-
-                  {/* Security Exit Pass Section */}
-                  <div className="bg-white p-4 rounded-xl mt-6">
-                    <p className="text-black font-black text-xs uppercase mb-2">Gate Pass QR</p>
-                    {exitPassQrUrl ? (
-                      <img src={exitPassQrUrl} className="w-40 h-40" alt="Exit Pass" />
-                    ) : (
-                      <Loader2 className="animate-spin text-black" />
-                    )}
+                  <div className="bg-white p-4 rounded-xl mt-4">
+                    <p className="text-black font-black text-xs uppercase mb-2">Security Gate Pass</p>
+                    <img src={exitPassQrUrl} className="w-40 h-40" />
                   </div>
-                  
                   <div className="flex items-center gap-2 text-primary-glow mt-4 animate-pulse">
                     <ShieldCheck className="w-5 h-5" />
-                    <span className="text-sm font-medium">Scan at gate to open doors</span>
+                    <span className="text-sm font-medium">Valid for Exit</span>
                   </div>
                 </div>
               )}
