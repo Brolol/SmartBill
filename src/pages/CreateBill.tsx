@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// REMOVED: QrCode import to resolve the TS warning
 import { Search, Plus, Minus, Trash2, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins, IndianRupee } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Html5QrcodeScanner } from 'html5-qrcode';
@@ -98,22 +97,25 @@ export default function CreateBill() {
       });
       setQrCodeDataUrl(url);
       setPaymentState('qr');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Checkout failed:', err);
-      alert("Checkout Failed. Ensure your Supabase tables (bills, bill_items) are created.");
+      alert(`Checkout Failed: ${err.message || 'Ensure bills and bill_items tables exist in Supabase.'}`);
       setPaymentState('idle');
     }
   };
 
   const handlePaymentSuccess = async () => {
     try {
+      // 1. Deduct Stock for all items
       for (const item of items) {
         await decrementStock(item.id, item.quantity);
       }
 
+      // 2. Add Loyalty Points (Ratio 1:30)
       const points = await addLoyaltyPoints('guest-user', total);
       setEarnedPoints(points);
 
+      // 3. Generate Exit Pass for the Security Gate
       const passId = await generateExitPass(`BILL-${Date.now()}`);
       if (passId) {
         const passUrl = await QRCode.toDataURL(passId, {
@@ -125,6 +127,7 @@ export default function CreateBill() {
 
       setPaymentState('success');
       
+      // Auto-clear and reset after delay to allow viewing the pass
       setTimeout(() => {
         clearCart();
         setPaymentState('idle');
@@ -179,7 +182,7 @@ export default function CreateBill() {
       {/* 2. SCANNER MODAL */}
       <AnimatePresence>
         {isScanning && (
-          <motion.div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 backdrop-blur-md">
+          <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 backdrop-blur-md">
             <div className="w-full max-w-md glass p-4 relative">
               <button onClick={() => setIsScanning(false)} className="absolute -top-10 right-0 text-white"><X className="w-8 h-8"/></button>
               <div id="reader-bill" className="rounded-xl overflow-hidden"></div>
@@ -221,7 +224,7 @@ export default function CreateBill() {
           <button
             disabled={items.length === 0 || paymentState !== 'idle'}
             onClick={handleCheckout}
-            className="w-full py-4 rounded-xl bg-primary text-white font-bold shadow-neon-primary flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-xl bg-primary text-white font-bold shadow-neon-primary flex items-center justify-center gap-2 active:scale-95 transition-transform"
           >
             {paymentState === 'generating' ? <Loader2 className="animate-spin" /> : <><IndianRupee className="w-5 h-5" /> Pay & Generate Pass</>}
           </button>
@@ -230,11 +233,11 @@ export default function CreateBill() {
         {/* Success / Pass Overlay */}
         <AnimatePresence>
           {(paymentState === 'qr' || paymentState === 'success') && (
-            <motion.div className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
+            <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
               {paymentState === 'qr' ? (
                 <>
-                  <div className="bg-white p-2 rounded-2xl mb-6">
-                    <img src={qrCodeDataUrl} className="w-64 h-64 cursor-pointer" onClick={handlePaymentSuccess} />
+                  <div className="bg-white p-2 rounded-2xl shadow-2xl mb-6">
+                    <img src={qrCodeDataUrl} className="w-64 h-64 cursor-pointer" onClick={handlePaymentSuccess} alt="Payment QR" />
                   </div>
                   <h3 className="text-2xl font-bold text-white">Scan to Pay</h3>
                   <p className="text-gray-400 mt-2">Click the QR to simulate payment success</p>
@@ -246,11 +249,11 @@ export default function CreateBill() {
                   <h3 className="text-2xl font-bold text-white">Payment Received</h3>
                   <div className="flex items-center gap-2 bg-yellow-500/10 px-4 py-2 rounded-full border border-yellow-500/20">
                     <Coins className="w-5 h-5 text-yellow-500" />
-                    <span className="text-yellow-500 font-bold">+{earnedPoints} Points</span>
+                    <span className="text-yellow-500 font-bold">+{earnedPoints} Points Earned</span>
                   </div>
                   <div className="bg-white p-4 rounded-xl mt-4">
                     <p className="text-black font-black text-xs uppercase mb-2">Security Gate Pass</p>
-                    <img src={exitPassQrUrl} className="w-40 h-40" />
+                    {exitPassQrUrl ? <img src={exitPassQrUrl} className="w-40 h-40" alt="Exit Pass" /> : <Loader2 className="animate-spin text-black" />}
                   </div>
                   <div className="flex items-center gap-2 text-primary-glow mt-4 animate-pulse">
                     <ShieldCheck className="w-5 h-5" />
