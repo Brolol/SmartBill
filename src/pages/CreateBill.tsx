@@ -64,9 +64,6 @@ export default function CreateBill() {
 
   const total = getTotal();
 
-  /**
-   * Generates a thermal-style printable receipt window
-   */
   const handlePrintReceipt = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -89,9 +86,9 @@ export default function CreateBill() {
             .items { width: 100%; font-size: 12px; border-collapse: collapse; margin: 10px 0; }
             .items td { padding: 3px 0; }
             .total-section { border-top: 1px solid #000; padding-top: 5px; font-weight: bold; }
-            .points { font-size: 10px; margin-top: 5px; }
+            .points { font-size: 11px; margin-top: 5px; color: #333; }
             .footer { text-align: center; margin-top: 20px; font-size: 11px; }
-            .qr-container { margin: 15px 0; }
+            .qr-container { margin: 15px 0; text-align: center; }
           </style>
         </head>
         <body onload="window.print(); window.close();">
@@ -175,8 +172,8 @@ export default function CreateBill() {
 
   const handlePaymentSuccess = async () => {
     try {
-      // 1. Accuracy Fix: Calculate points immediately (1:30 ratio)
-      const pointsCalculated = Math.floor(total * 30);
+      // 1. Point Logic: 1 Point = ₹30 (Total / 30)
+      const pointsCalculated = Math.floor(total / 30);
       setEarnedPoints(pointsCalculated);
 
       // 2. Sync database stock
@@ -187,7 +184,7 @@ export default function CreateBill() {
       // 3. Update database loyalty points
       await addLoyaltyPoints('guest-user', total);
 
-      // 4. Generate the Exit Pass for the QR and Receipt
+      // 4. Generate the Exit Pass
       const passId = await generateExitPass(`BILL-${Date.now()}`);
       if (passId) {
         const passUrl = await QRCode.toDataURL(passId, {
@@ -199,7 +196,6 @@ export default function CreateBill() {
 
       setPaymentState('success');
       
-      // Keep state for 30s to allow printing/scanning
       setTimeout(() => {
         clearCart();
         setPaymentState('idle');
@@ -215,7 +211,6 @@ export default function CreateBill() {
   return (
     <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-full min-h-[calc(100vh-6rem)] pb-20 lg:pb-0">
       
-      {/* 1. PRODUCT SECTION */}
       <div className="flex-1 flex flex-col gap-4 order-2 lg:order-1 px-2 lg:px-0">
         <div className="glass p-3 md:p-4 flex items-center gap-2 md:gap-3">
           <Search className="text-gray-400 w-4 h-4 md:w-5 md:h-5" />
@@ -251,7 +246,6 @@ export default function CreateBill() {
         </div>
       </div>
 
-      {/* 2. SCANNER MODAL */}
       <AnimatePresence>
         {isScanning && (
           <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 backdrop-blur-md">
@@ -263,7 +257,6 @@ export default function CreateBill() {
         )}
       </AnimatePresence>
 
-      {/* 3. CART SECTION */}
       <div className="w-full lg:w-96 glass flex flex-col relative overflow-hidden order-1 lg:order-2 max-h-[40vh] lg:max-h-full">
         <div className="p-4 border-b border-white/5 bg-white/5">
           <h2 className="text-xl font-bold text-gradient">Checkout Cart</h2>
@@ -302,7 +295,6 @@ export default function CreateBill() {
           </button>
         </div>
 
-        {/* Success / Pass / Receipt Overlay */}
         <AnimatePresence>
           {(paymentState === 'qr' || paymentState === 'success') && (
             <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
@@ -325,7 +317,6 @@ export default function CreateBill() {
                     <span className="text-yellow-500 font-bold">+{earnedPoints} Points Earned</span>
                   </div>
 
-                  {/* Security Exit Pass Display */}
                   <div className="bg-white p-4 rounded-xl mt-2">
                     <p className="text-black font-black text-xs uppercase mb-2">Gate Pass QR</p>
                     {exitPassQrUrl ? <img src={exitPassQrUrl} className="w-40 h-40" alt="Exit Pass" /> : <Loader2 className="animate-spin text-black" />}
