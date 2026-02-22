@@ -67,15 +67,16 @@ export default function CreateBill() {
     setPaymentState('generating');
     try {
       // 1. Create the main Bill record in Supabase
+      // Using 'as any' to bypass schema cache/type mismatches
       const { data: billData, error: billError } = await (supabase as any)
         .from('bills')
         .insert([{ total_amount: total }])
         .select()
         .single();
 
-      if (billError) throw billError;
+      if (billError) throw new Error(`Bill Error: ${billError.message}`);
 
-      // 2. Insert individual items linked to that Bill ID
+      // 2. Prepare the items - Mapping strictly to database column names
       const transactionItems = items.map(item => ({
         bill_id: billData.id,
         product_id: item.id,
@@ -83,13 +84,14 @@ export default function CreateBill() {
         subtotal: item.price * item.quantity
       }));
       
+      // 3. Insert individual items linked to that Bill ID
       const { error: itemsError } = await (supabase as any)
         .from('bill_items')
         .insert(transactionItems);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) throw new Error(`Items Error: ${itemsError.message}`);
 
-      // 3. Generate Payment QR
+      // 4. Generate Payment QR
       const qrString = `PAYMENT://BILL/${billData.id}/TOTAL/INR${total.toFixed(2)}`;
       const url = await QRCode.toDataURL(qrString, {
         width: 300,
@@ -99,23 +101,21 @@ export default function CreateBill() {
       setPaymentState('qr');
     } catch (err: any) {
       console.error('Checkout failed:', err);
-      alert(`Checkout Failed: ${err.message || 'Ensure bills and bill_items tables exist in Supabase.'}`);
+      // Detailed alert to catch specific database column mismatches
+      alert(`Checkout Failed: ${err.message || 'Check your Supabase SQL structure.'}`);
       setPaymentState('idle');
     }
   };
 
   const handlePaymentSuccess = async () => {
     try {
-      // 1. Deduct Stock for all items
       for (const item of items) {
         await decrementStock(item.id, item.quantity);
       }
 
-      // 2. Add Loyalty Points (Ratio 1:30)
       const points = await addLoyaltyPoints('guest-user', total);
       setEarnedPoints(points);
 
-      // 3. Generate Exit Pass for the Security Gate
       const passId = await generateExitPass(`BILL-${Date.now()}`);
       if (passId) {
         const passUrl = await QRCode.toDataURL(passId, {
@@ -127,7 +127,6 @@ export default function CreateBill() {
 
       setPaymentState('success');
       
-      // Auto-clear and reset after delay to allow viewing the pass
       setTimeout(() => {
         clearCart();
         setPaymentState('idle');
