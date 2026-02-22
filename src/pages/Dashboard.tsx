@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 import { runComprehensiveAnomalyCheck, OutlierAlert } from '../analytics/outlierEngine';
 import { generatePrediction, PredictionOutput } from '../analytics/predictionEngine';
 
-// --- FIX: Define the structure of your Supabase data ---
+// --- DB STRUCTURE ---
 interface DBProductStat {
   date: string;
   revenue: number;
@@ -93,9 +93,14 @@ export default function Dashboard() {
     );
   }
 
+  // Calculate predicted weekly revenue for the KPI card
+  const predictedWeeklyRevenue = liveRevenueData.length > 0 
+    ? (liveRevenueData.reduce((acc, curr) => acc + curr.actual, 0) / 7 * 1.1).toFixed(0)
+    : "0";
+
   return (
     <motion.div 
-      className="h-full flex flex-col gap-4 md:gap-6 overflow-y-auto px-2 md:pr-2 pb-10" // Added horizontal padding for mobile
+      className="h-full flex flex-col gap-4 md:gap-6 overflow-y-auto px-2 md:pr-2 pb-10"
       variants={containerVariants}
       initial="hidden"
       animate="show"
@@ -126,11 +131,11 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      {/* 2. KPI CARDS - Responsive Grid: 1 col on mobile, 2 on tablet, 4 on desktop */}
+      {/* 2. KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <KPICard 
           title="Predicted Revenue" 
-          value={`$${(liveRevenueData.reduce((acc, curr) => acc + curr.actual, 0) / 7 * 1.1).toFixed(0)}`} 
+          value={`₹${predictedWeeklyRevenue}`} 
           change="+12.5%" 
           isPositive={true} 
           icon={<TrendingUp />} 
@@ -162,7 +167,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* 3. CHART & INSIGHTS - Stacks on mobile, Grid on desktop */}
+      {/* 3. CHART & INSIGHTS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         
         {/* REVENUE FORECAST CHART */}
@@ -170,7 +175,7 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h2 className="text-lg md:text-xl font-bold text-white">7-Day Revenue Forecast</h2>
-              <p className="text-xs md:text-sm text-gray-400">Actual vs AI Predicted</p>
+              <p className="text-xs md:text-sm text-gray-400">Actual vs AI Predicted (in ₹)</p>
             </div>
             <div className="flex gap-4 text-[10px] md:text-sm font-medium">
               <div className="flex items-center gap-2">
@@ -187,7 +192,7 @@ export default function Dashboard() {
           <div className="flex-1 w-full relative min-h-[250px]">
             {mounted && (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={liveRevenueData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                <AreaChart data={liveRevenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#818CF8" stopOpacity={0.3}/>
@@ -200,10 +205,11 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                   <XAxis dataKey="name" stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                  <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val}`} />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#111827', borderColor: '#ffffff20', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
                     itemStyle={{ color: '#fff' }}
+                    formatter={(value) => [`₹${value}`, '']}
                   />
                   <Area type="monotone" dataKey="predicted" stroke="#06B6D4" strokeDasharray="5 5" fillOpacity={1} fill="url(#colorPredicted)" />
                   <Area type="monotone" dataKey="actual" stroke="#818CF8" strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" />
@@ -287,7 +293,6 @@ function KPICard({ title, value, change, isPositive, icon, color }: any) {
     <motion.div variants={itemVariants} className="glass-sm p-4 md:p-6 hover:-translate-y-1 transition-transform duration-300 cursor-default">
       <div className="flex justify-between items-start mb-4">
         <div className={`p-2 md:p-3 rounded-xl ${bgMap[color]}`}>
-          {/* Adjusted icon size for mobile */}
           {icon && typeof icon === 'object' ? { ...icon, props: { ...icon.props, className: 'w-5 h-5 md:w-6 md:h-6' } } : icon}
         </div>
         <div className={`flex items-center gap-1 text-[10px] md:text-sm font-bold ${isPositive ? 'text-success' : 'text-danger'}`}>

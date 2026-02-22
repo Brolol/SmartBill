@@ -35,8 +35,14 @@ export default function Inventory() {
 
   async function fetchInventory() {
     setLoading(true);
-    const { data } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-    if (data) setProducts(data as any);
+    // Cast to any to bypass strict type locks if schema is out of sync
+    const { data, error } = await (supabase as any)
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) console.error('Fetch error:', error.message);
+    if (data) setProducts(data);
     setLoading(false);
   }
 
@@ -63,18 +69,21 @@ export default function Inventory() {
       category: formData.category,
       base_price: parseFloat(formData.base_price),
       current_stock: parseInt(formData.current_stock),
-      barcode: formData.barcode
+      // Ensure empty barcode is sent as null to satisfy unique constraints
+      barcode: formData.barcode.trim() === '' ? null : formData.barcode.trim()
     };
 
-    const { error } = await supabase.from('products').insert([payload] as any);
-    if (!error) {
+    const { error } = await (supabase as any).from('products').insert([payload]);
+    
+    if (error) {
+      alert(`Save failed: ${error.message}`);
+    } else {
       setShowAddModal(false);
       setFormData({ name: '', category: 'General', base_price: '', current_stock: '', barcode: '' });
       fetchInventory();
     }
   }
 
-  // --- NEW: PRINT LABEL UTILITY ---
   const printLabel = async (product: Product) => {
     if (!product.barcode) return alert("No barcode assigned to this product.");
     
@@ -97,7 +106,7 @@ export default function Inventory() {
             <div class="label-card">
               <div class="name">${product.name}</div>
               <img src="${qrDataUrl}" />
-              <div class="price">$${Number(product.base_price).toFixed(2)}</div>
+              <div class="price">₹${Number(product.base_price).toFixed(2)}</div>
               <div style="font-size: 10px; margin-top: 5px;">${product.barcode}</div>
             </div>
           </body>
@@ -117,7 +126,7 @@ export default function Inventory() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2">
         <div>
           <h1 className="text-2xl font-bold text-white">Inventory</h1>
-          <p className="text-sm text-gray-400">Manage stock and print shelf labels</p>
+          <p className="text-sm text-gray-400">Manage stock and print shelf labels in ₹</p>
         </div>
         
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -173,7 +182,7 @@ export default function Inventory() {
                 </div>
                 <span className="hidden md:block text-gray-400 text-sm">{p.category}</span>
                 <span className={`text-sm ${p.current_stock < 10 ? 'text-danger-glow font-bold' : 'text-gray-300'}`}>{p.current_stock}</span>
-                <span className="text-primary-glow font-bold">${Number(p.base_price).toFixed(2)}</span>
+                <span className="text-primary-glow font-bold">₹{Number(p.base_price).toFixed(2)}</span>
                 <div className="text-right">
                   <button onClick={() => printLabel(p)} className="p-2 hover:text-primary-glow transition-colors" title="Print Shelf Label">
                     <Printer className="w-5 h-5" />
@@ -193,7 +202,7 @@ export default function Inventory() {
                <h2 className="text-2xl font-bold mb-2">New Product</h2>
                <input required placeholder="Item Name" className="w-full glass-sm p-4 bg-transparent outline-none border-white/10 text-white" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                <div className="grid grid-cols-2 gap-4">
-                  <input required type="number" step="0.01" placeholder="Price" className="glass-sm p-4 bg-transparent outline-none border-white/10 text-white" value={formData.base_price} onChange={e => setFormData({...formData, base_price: e.target.value})} />
+                  <input required type="number" step="0.01" placeholder="Price (₹)" className="glass-sm p-4 bg-transparent outline-none border-white/10 text-white" value={formData.base_price} onChange={e => setFormData({...formData, base_price: e.target.value})} />
                   <input required type="number" placeholder="Stock" className="glass-sm p-4 bg-transparent outline-none border-white/10 text-white" value={formData.current_stock} onChange={e => setFormData({...formData, current_stock: e.target.value})} />
                </div>
                <div className="flex gap-2">
