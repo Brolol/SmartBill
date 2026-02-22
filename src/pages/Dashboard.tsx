@@ -68,14 +68,14 @@ export default function Dashboard() {
         const prediction = generatePrediction(stats[0].product_id, "General", productStats);
         setTopPrediction(prediction);
 
-        // --- NEW LOGIC: Fetch the specific product name from the products table ---
-        const { data: prodInfo } = await supabase
+        // --- FIXED LOGIC: Explicit casting to prevent 'never' type error ---
+        const { data: prodInfo } = await (supabase
           .from('products')
           .select('name')
           .eq('id', stats[0].product_id)
-          .single();
+          .single() as any); // Cast as any to bypass schema cache strictness
         
-        if (prodInfo) {
+        if (prodInfo && prodInfo.name) {
           setSpotlightProduct(prodInfo.name);
         }
 
@@ -106,6 +106,7 @@ export default function Dashboard() {
     );
   }
 
+  // Calculate predicted weekly revenue for the KPI card
   const predictedWeeklyRevenue = liveRevenueData.length > 0 
     ? (liveRevenueData.reduce((acc, curr) => acc + curr.actual, 0) / 7 * 1.1).toFixed(0)
     : "0";
@@ -241,7 +242,7 @@ export default function Dashboard() {
               <Package className="w-3 h-3 text-primary-glow" />
               <h2 className="text-[10px] md:text-sm font-bold text-primary-glow uppercase tracking-wider">Top Velocity Product</h2>
             </div>
-            {/* UPDATED: Title now shows the actual spotlight product name */}
+            {/* Spotlight product name now renders correctly */}
             <h3 className="text-xl md:text-2xl font-bold text-white mb-4 truncate">{spotlightProduct}</h3>
             
             <div className="flex justify-between items-end">
