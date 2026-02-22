@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Target, Loader2 } from 'lucide-react';
+import { TrendingUp, Package, IndianRupee, Target, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const COLORS = ['#6366F1', '#22D3EE', '#818CF8', '#06B6D4', '#4F46E5'];
@@ -22,6 +22,7 @@ export default function Analytics() {
   const [data, setData] = useState<{ date: string; revenue: number }[]>([]);
   const [categoryData, setCategoryData] = useState<{ name: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totals, setTotals] = useState({ revenue: 0, items: 0 });
 
   useEffect(() => {
     fetchAnalytics();
@@ -39,11 +40,18 @@ export default function Analytics() {
       const stats = (statsData as unknown as ProductStatResult[]) || [];
 
       if (stats.length > 0) {
+        // Calculate Global Totals
+        const totalRev = stats.reduce((acc, s) => acc + s.revenue, 0);
+        const totalItems = stats.reduce((acc, s) => acc + s.quantity_sold, 0);
+        setTotals({ revenue: totalRev, items: totalItems });
+
+        // Process for Bar Chart (Weekly Trend)
         setData(stats.slice(-7).map(s => ({
           date: new Date(s.date).toLocaleDateString('en-US', { weekday: 'short' }),
           revenue: s.revenue
         })));
 
+        // Process for Pie Chart (Category Breakdown)
         const categories: Record<string, number> = {};
         stats.forEach((s) => {
           const cat = s.products?.category || 'General';
@@ -66,33 +74,59 @@ export default function Analytics() {
 
   return (
     <div className="h-full flex flex-col gap-6 p-2 pb-24 lg:pb-0 overflow-y-auto">
+      {/* KPI Section with Rupee Support */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Revenue" value="$12,450" icon={<DollarSign />} color="text-primary-glow" />
-        <StatCard title="Avg. Order Value" value="$42.50" icon={<TrendingUp />} color="text-accent-neon" />
-        <StatCard title="Items Sold" value="842" icon={<Package />} color="text-success" />
-        <StatCard title="Sales Target" value="82%" icon={<Target />} color="text-warning" />
+        <StatCard 
+          title="Total Revenue" 
+          value={`₹${totals.revenue.toLocaleString()}`} 
+          icon={<IndianRupee />} 
+          color="text-primary-glow" 
+        />
+        <StatCard 
+          title="Avg. Order Value" 
+          value={`₹${(totals.revenue / (totals.items || 1)).toFixed(2)}`} 
+          icon={<TrendingUp />} 
+          color="text-accent-neon" 
+        />
+        <StatCard 
+          title="Items Sold" 
+          value={totals.items.toString()} 
+          icon={<Package />} 
+          color="text-success" 
+        />
+        <StatCard 
+          title="Sales Target" 
+          value="82%" 
+          icon={<Target />} 
+          color="text-warning" 
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Revenue Bar Chart */}
         <div className="glass p-6 min-h-[350px]">
-          <h3 className="text-lg font-bold mb-6 text-white">Revenue Trend (7 Days)</h3>
+          <h3 className="text-lg font-bold mb-6 text-white">Weekly Revenue (₹)</h3>
           {data.length > 0 ? (
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                   <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                  <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `$${v}`} />
-                  <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px' }} />
+                  <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `₹${v}`} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px', color: '#fff' }} 
+                    formatter={(value) => [`₹${value}`, 'Revenue']}
+                  />
                   <Bar dataKey="revenue" fill="#6366F1" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-[250px] flex items-center justify-center text-gray-500 italic">No sales data found for this week</div>
+            <div className="h-[250px] flex items-center justify-center text-gray-500 italic">No sales data found</div>
           )}
         </div>
 
+        {/* Category Pie Chart */}
         <div className="glass p-6 min-h-[350px]">
           <h3 className="text-lg font-bold mb-6 text-white">Revenue by Category</h3>
           {categoryData.length > 0 ? (
@@ -102,13 +136,13 @@ export default function Analytics() {
                   <Pie data={categoryData} innerRadius={60} outerRadius={80} dataKey="value">
                     {categoryData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip formatter={(value) => `₹${value}`} />
                   <Legend verticalAlign="bottom" height={36}/>
                 </PieChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-[250px] flex items-center justify-center text-gray-500 italic">No categories to display</div>
+            <div className="h-[250px] flex items-center justify-center text-gray-500 italic">No categories found</div>
           )}
         </div>
       </div>
