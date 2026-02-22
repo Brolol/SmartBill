@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, Variants } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Activity, TrendingUp, AlertTriangle, Zap, BrainCircuit, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
+import { Activity, TrendingUp, AlertTriangle, Zap, BrainCircuit, ArrowUpRight, ArrowDownRight, Loader2, Package } from 'lucide-react';
 
 // --- NEW IMPORTS: AI ENGINES & SUPABASE ---
 import { supabase } from '../lib/supabase';
@@ -39,6 +39,8 @@ export default function Dashboard() {
   const [liveRevenueData, setLiveRevenueData] = useState<any[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<OutlierAlert[]>([]);
   const [topPrediction, setTopPrediction] = useState<PredictionOutput | null>(null);
+  // NEW STATE: To hold the name of the product being predicted
+  const [spotlightProduct, setSpotlightProduct] = useState<string>("Analyzing...");
 
   useEffect(() => {
     setMounted(true);
@@ -65,6 +67,17 @@ export default function Dashboard() {
         const productStats = stats.map(s => ({ date: s.date, quantity_sold: s.quantity_sold }));
         const prediction = generatePrediction(stats[0].product_id, "General", productStats);
         setTopPrediction(prediction);
+
+        // --- NEW LOGIC: Fetch the specific product name from the products table ---
+        const { data: prodInfo } = await supabase
+          .from('products')
+          .select('name')
+          .eq('id', stats[0].product_id)
+          .single();
+        
+        if (prodInfo) {
+          setSpotlightProduct(prodInfo.name);
+        }
 
         const chartFormatted = stats.slice(-7).map(s => ({
           name: new Date(s.date).toLocaleDateString('en-US', { weekday: 'short' }),
@@ -93,7 +106,6 @@ export default function Dashboard() {
     );
   }
 
-  // Calculate predicted weekly revenue for the KPI card
   const predictedWeeklyRevenue = liveRevenueData.length > 0 
     ? (liveRevenueData.reduce((acc, curr) => acc + curr.actual, 0) / 7 * 1.1).toFixed(0)
     : "0";
@@ -225,8 +237,12 @@ export default function Dashboard() {
           {/* Spotlight Card */}
           <div className="glass p-4 md:p-6 relative overflow-hidden group shrink-0">
             <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-primary/20 rounded-full blur-3xl -mr-10 -mt-10"></div>
-            <h2 className="text-[10px] md:text-sm font-bold text-primary-glow uppercase tracking-wider mb-1">Top Prediction</h2>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-4">Stock Velocity</h3>
+            <div className="flex items-center gap-2 mb-1">
+              <Package className="w-3 h-3 text-primary-glow" />
+              <h2 className="text-[10px] md:text-sm font-bold text-primary-glow uppercase tracking-wider">Top Velocity Product</h2>
+            </div>
+            {/* UPDATED: Title now shows the actual spotlight product name */}
+            <h3 className="text-xl md:text-2xl font-bold text-white mb-4 truncate">{spotlightProduct}</h3>
             
             <div className="flex justify-between items-end">
               <div>
