@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Minus, Trash2, QrCode, CheckCircle2, X, Loader2, Barcode } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, QrCode, CheckCircle2, X, Loader2, Barcode, ShieldCheck, Coins } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { useCartStore } from '../store/useCartStore';
-import { supabase } from '../lib/supabase';
+import { supabase, decrementStock, addLoyaltyPoints, generateExitPass } from '../lib/supabase';
 
 interface Product {
   id: string;
@@ -26,6 +26,8 @@ export default function CreateBill() {
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentState, setPaymentState] = useState<'idle' | 'generating' | 'qr' | 'success'>('idle');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const [exitPassQrUrl, setExitPassQrUrl] = useState('');
+  const [earnedPoints, setEarnedPoints] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
 
   const { items, addItem, removeItem, updateQuantity, getTotal, clearCart } = useCartStore();
@@ -70,6 +72,7 @@ export default function CreateBill() {
   const handleCheckout = async () => {
     setPaymentState('generating');
     try {
+      // 1. Generate Payment QR (Simulated Payment Request)
       const invoiceId = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
       const qrString = `PAYMENT://INVOICE/${invoiceId}/AMOUNT/${total.toFixed(2)}`;
       const url = await QRCode.toDataURL(qrString, {
@@ -77,13 +80,17 @@ export default function CreateBill() {
         color: { dark: '#6366F1', light: '#0B0F19' }
       });
       setQrCodeDataUrl(url);
+
+      // 2. Insert Bill Items to Database
       const transactionItems: BillItemInsert[] = items.map(item => ({
         product_id: item.id,
         quantity: item.quantity,
         subtotal: item.price * item.quantity
       }));
+      
       const { error } = await supabase.from('bill_items').insert(transactionItems as any);
       if (error) throw error;
+
       setPaymentState('qr');
     } catch (err) {
       console.error('Checkout failed:', err);
@@ -91,12 +98,39 @@ export default function CreateBill() {
     }
   };
 
-  const handlePaymentSuccess = () => {
-    setPaymentState('success');
-    setTimeout(() => {
-      clearCart();
-      setPaymentState('idle');
-    }, 2000);
+  const handlePaymentSuccess = async () => {
+    try {
+      // 1. Deduct Stock for all items
+      for (const item of items) {
+        await decrementStock(item.id, item.quantity);
+      }
+
+      // 2. Add Loyalty Points (1:30 Ratio)
+      // Using a static ID 'guest-user' for demo; replace with auth logic if needed
+      const points = await addLoyaltyPoints('guest-user', total);
+      setEarnedPoints(points);
+
+      // 3. Generate Exit Pass for the Security Gate
+      const passId = await generateExitPass(`INV-${Date.now()}`);
+      if (passId) {
+        const passUrl = await QRCode.toDataURL(passId, {
+          width: 300,
+          color: { dark: '#000000', light: '#FFFFFF' }
+        });
+        setExitPassQrUrl(passUrl);
+      }
+
+      setPaymentState('success');
+      
+      // Auto-clear and reset after delay
+      setTimeout(() => {
+        clearCart();
+        setPaymentState('idle');
+        setExitPassQrUrl('');
+      }, 10000); // 10 seconds to allow showing the exit pass
+    } catch (err) {
+      console.error('Finalizing transaction failed:', err);
+    }
   };
 
   if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin w-10 h-10 text-primary" /></div>;
@@ -104,7 +138,7 @@ export default function CreateBill() {
   return (
     <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-full min-h-[calc(100vh-6rem)] pb-20 lg:pb-0">
       
-      {/* 1. PRODUCT SECTION - Appears 2nd on Mobile, 1st on PC */}
+      {/* 1. PRODUCT SECTION */}
       <div className="flex-1 flex flex-col gap-4 order-2 lg:order-1 px-2 lg:px-0">
         <div className="glass p-3 md:p-4 flex items-center gap-2 md:gap-3">
           <Search className="text-gray-400 w-4 h-4 md:w-5 md:h-5" />
@@ -144,7 +178,7 @@ export default function CreateBill() {
         </div>
       </div>
 
-      {/* 2. SCANNER MODAL - Responsive Width */}
+      {/* 2. SCANNER MODAL */}
       <AnimatePresence>
         {isScanning && (
           <motion.div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 md:p-6 backdrop-blur-md">
@@ -157,7 +191,7 @@ export default function CreateBill() {
         )}
       </AnimatePresence>
 
-      {/* 3. CART SECTION - Appears 1st on Mobile, 2nd on PC */}
+      {/* 3. CART SECTION */}
       <div className="w-full lg:w-96 glass flex flex-col relative overflow-hidden order-1 lg:order-2 max-h-[40vh] lg:max-h-full">
         <div className="p-3 md:p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
           <h2 className="text-lg md:text-xl font-semibold text-gradient">Billing Cart</h2>
@@ -201,7 +235,7 @@ export default function CreateBill() {
           </button>
         </div>
 
-        {/* Payment Overlay - Mobile Safe */}
+        {/* Payment & Exit Pass Overlay */}
         <AnimatePresence>
           {(paymentState === 'qr' || paymentState === 'success') && (
             <motion.div className="fixed lg:absolute inset-0 bg-background/95 backdrop-blur-xl z-50 lg:z-20 flex flex-col items-center justify-center p-6 text-center">
@@ -215,11 +249,31 @@ export default function CreateBill() {
                   <button onClick={() => setPaymentState('idle')} className="mt-8 text-gray-500 underline text-sm">Cancel</button>
                 </>
               ) : (
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center gap-4 w-full">
                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
-                    <CheckCircle2 className="w-20 h-20 text-success mb-4" />
+                    <CheckCircle2 className="w-16 h-16 text-success mb-2" />
                   </motion.div>
                   <h3 className="text-2xl font-bold text-white">Payment Success!</h3>
+                  
+                  <div className="flex items-center gap-2 bg-yellow-500/10 px-4 py-2 rounded-full border border-yellow-500/20">
+                    <Coins className="w-5 h-5 text-yellow-500" />
+                    <span className="text-yellow-500 font-bold">+{earnedPoints} Points Earned</span>
+                  </div>
+
+                  {/* Security Exit Pass Section */}
+                  <div className="bg-white p-4 rounded-xl mt-6">
+                    <p className="text-black font-black text-xs uppercase mb-2">Gate Pass QR</p>
+                    {exitPassQrUrl ? (
+                      <img src={exitPassQrUrl} className="w-40 h-40" alt="Exit Pass" />
+                    ) : (
+                      <Loader2 className="animate-spin text-black" />
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-primary-glow mt-4 animate-pulse">
+                    <ShieldCheck className="w-5 h-5" />
+                    <span className="text-sm font-medium">Scan at gate to open doors</span>
+                  </div>
                 </div>
               )}
             </motion.div>

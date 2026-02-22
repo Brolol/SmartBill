@@ -76,19 +76,15 @@ export async function fetchUnreadInsights() {
 }
 
 // ==========================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (INVENTORY & SALES)
 // ==========================================
 
 /**
  * Deducts stock from a product after a successful sale.
- * THE FIX: We cast the client to 'any' to remove the 'never' constraint 
- * inherited from the generated types.
  */
 export async function decrementStock(productId: string, quantity: number) {
-  // Use 'as any' on the supabase client to bypass strict type locks
   const client = supabase as any;
 
-  // 1. Fetch current stock
   const { data, error: fetchError } = await client
     .from('products')
     .select('current_stock')
@@ -102,10 +98,8 @@ export async function decrementStock(productId: string, quantity: number) {
     return;
   }
 
-  // 2. Calculate new stock level
   const newStock = Math.max(0, productData.current_stock - quantity);
 
-  // 3. Update the database
   const { error: updateError } = await client
     .from('products')
     .update({ current_stock: newStock })
@@ -114,4 +108,70 @@ export async function decrementStock(productId: string, quantity: number) {
   if (updateError) {
     console.error('Stock Update Error:', updateError.message);
   }
+}
+
+// ==========================================
+// NEW: LOYALTY & CONTACTLESS EXIT SYSTEM
+// ==========================================
+
+/**
+ * Calculates and adds loyalty points. 
+ * Ratio 1:30 ($1 spent = 30 points).
+ */
+export async function addLoyaltyPoints(userId: string, totalAmount: number) {
+  const client = supabase as any;
+  const pointsToEarn = Math.floor(totalAmount * 30);
+
+  // 1. Fetch existing points
+  const { data, error: fetchError } = await client
+    .from('profiles')
+    .select('loyalty_points')
+    .eq('id', userId)
+    .single();
+
+  if (fetchError) {
+    console.error('Error fetching loyalty points:', fetchError.message);
+    return 0;
+  }
+
+  const currentPoints = data?.loyalty_points || 0;
+  const newPointsTotal = currentPoints + pointsToEarn;
+
+  // 2. Update new total
+  const { error: updateError } = await client
+    .from('profiles')
+    .update({ loyalty_points: newPointsTotal })
+    .eq('id', userId);
+
+  if (updateError) {
+    console.error('Error updating loyalty points:', updateError.message);
+    return 0;
+  }
+
+  return pointsToEarn;
+}
+
+/**
+ * Creates a unique Exit Pass in Supabase for the security gate.
+ * @returns The unique Pass ID for the QR code.
+ */
+export async function generateExitPass(billId: string) {
+  const client = supabase as any;
+  
+  const { data, error } = await client
+    .from('exit_passes')
+    .insert([{
+      bill_id: billId,
+      status: 'valid',
+      created_at: new Date().toISOString()
+    }])
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('Error generating exit pass:', error.message);
+    return null;
+  }
+
+  return data.id;
 }
