@@ -1,11 +1,11 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ESNext", // Changed from ES2020 for better modern support
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"], // Changed ES2020 to ESNext
     "module": "ESNext",
     "skipLibCheck": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "react"], // Added "react" here
     
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -19,7 +19,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true // Added this for better compatibility with CommonJS modules
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
