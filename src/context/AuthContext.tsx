@@ -30,6 +30,12 @@ interface ProfileRecord {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Hard-coded Admin Credentials
+const ADMIN_CREDENTIALS = {
+  username: 'admin',
+  password: 'admin123'
+};
+
 function toEmail(username: string) {
   const trimmedUsername = username.trim();
   return trimmedUsername.includes('@') ? trimmedUsername : `${trimmedUsername}@smartbill.ai`;
@@ -79,7 +85,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!isMounted) return;
 
       if (!sessionUser) {
-        setUser(null);
+        // If no Supabase session, check if we had a hardcoded admin session in local storage
+        const isHardcodedAdmin = localStorage.getItem('sb_admin_session') === 'true';
+        if (isHardcodedAdmin) {
+          setUser({
+            id: 'admin-hardcoded',
+            email: 'admin@smartbill.ai',
+            username: 'admin',
+            role: 'admin'
+          });
+        } else {
+          setUser(null);
+        }
         setLoading(false);
         return;
       }
@@ -92,16 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const initializeAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       await syncUser(session?.user ?? null);
     };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       void syncUser(session?.user ?? null);
     });
 
@@ -114,6 +126,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (username: string, password: string) => {
+    // 1. Check Hard-coded Admin first
+    if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+      const adminUser: AuthUser = {
+        id: 'admin-hardcoded',
+        email: 'admin@smartbill.ai',
+        username: 'admin',
+        role: 'admin'
+      };
+      setUser(adminUser);
+      localStorage.setItem('sb_admin_session', 'true'); // Persist the fake session
+      return true;
+    }
+
+    // 2. Fallback to Supabase for regular users
     const { data, error } = await supabase.auth.signInWithPassword({
       email: toEmail(username),
       password,
@@ -124,7 +150,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
-    return Boolean(data.user);
+    if (data.user) {
+      localStorage.removeItem('sb_admin_session'); // Ensure no collision
+      const authUser = await buildAuthUser(data.user);
+      setUser(authUser);
+      return true;
+    }
+
+    return false;
   };
 
   const signup = async (username: string, password: string) => {
@@ -145,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {
         id: data.user.id,
         username: trimmedUsername || getUsername(email),
-        role: 'user',
+        role: 'user', // New signups always default to user
       },
     ]);
 
@@ -159,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('sb_admin_session');
     setUser(null);
   };
 
